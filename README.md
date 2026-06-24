@@ -1,6 +1,6 @@
 # 🏥 MEDIC-UTP — Sistema de Citas Médicas y Facturación
 
-Proyecto universitario desarrollado en **Python** para el curso de **Programación Orientada a Objetos (POO)**.
+Proyecto universitario desarrollado en **Python**.
 
 Sistema de escritorio en **consola** que gestiona el flujo de atención de una clínica:
 
