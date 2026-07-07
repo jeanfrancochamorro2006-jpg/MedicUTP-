@@ -39,12 +39,15 @@
     {
       "id": 1,
       "cita_id": 1,
-      "fecha_emision": "07/07/2026 10:53 AM",
-      "tipo_comprobante": "Boleta",
+      "fecha_emision": "07/07/2026 11:25 AM",
+      "tipo_comprobante": "Factura",
       "monto_consulta": 55.0,
       "descuento": 16.5,
       "total": 38.5,
-      "estado_pago": "Pendiente"
+      "estado_pago": "Completo",
+      "ruc": "10323432345",
+      "razon_social": "10232223456",
+      "metodo_pago": "Yape"
     }
   ]
 }

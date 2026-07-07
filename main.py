@@ -312,7 +312,10 @@ def cargar_base_datos():
                     cita=cita,
                     fecha_emision=f_dict["fecha_emision"],
                     tipo_comprobante=f_dict["tipo_comprobante"],
-                    estado_pago=f_dict["estado_pago"]
+                    estado_pago=f_dict.get("estado_pago", "Completo"),
+                    ruc=f_dict.get("ruc", ""),
+                    razon_social=f_dict.get("razon_social", ""),
+                    metodo_pago=f_dict.get("metodo_pago", "Efectivo")
                 )
                 f._monto_consulta = f_dict["monto_consulta"]
                 f._descuento = f_dict["descuento"]
@@ -910,19 +913,29 @@ def imprimir_boleta_ascii(factura):
     fecha_em = parts[0] if len(parts) > 0 else factura.obtener_fecha_emision()
     hora_em = " ".join(parts[1:]) if len(parts) > 1 else "10:00 AM"
     
-    n_boleta = f"B001-{factura.obtener_id():06d}"
+    tipo = factura.obtener_tipo_comprobante()
+    prefix = "F001" if tipo == "Factura" else "B001"
+    n_comprobante = f"{prefix}-{factura.obtener_id():06d}"
     
     print("\n============================================================")
     print("                     MEDIC-UTP")
     print("          SISTEMA DE CITAS MÉDICAS Y FACTURACIÓN")
     print("============================================================")
-    print("\n                 BOLETA ELECTRÓNICA")
+    print(f"\n                 {tipo.upper()} ELECTRÓNICA")
     print("------------------------------------------------------------")
-    print(f"N° Boleta        : {n_boleta}")
+    print(f"N° {tipo}        : {n_comprobante}")
     print(f"Fecha Emisión    : {fecha_em}")
     print(f"Hora Emisión     : {hora_em}")
-    print(f"\nPaciente         : {paciente.obtener_nombre()}")
-    print(f"DNI              : {paciente.obtener_dni()}")
+    
+    if tipo == "Factura":
+        print(f"\nAdquirente       : {factura.obtener_razon_social()}")
+        print(f"RUC              : {factura.obtener_ruc()}")
+        print(f"\nPaciente         : {paciente.obtener_nombre()}")
+        print(f"DNI              : {paciente.obtener_dni()}")
+    else:
+        print(f"\nPaciente         : {paciente.obtener_nombre()}")
+        print(f"DNI              : {paciente.obtener_dni()}")
+        
     print(f"Seguro           : {paciente.obtener_seguro()}")
     print(f"\nMédico           : Dr(a). {medico.obtener_nombre()}")
     print(f"Especialidad     : {medico.obtener_especialidad()}")
@@ -939,7 +952,7 @@ def imprimir_boleta_ascii(factura):
     print(f"TOTAL A PAGAR    : S/. {factura.obtener_total():.2f}")
     print("-----------------------------------------")
     print(f"\nEstado de Pago   : {factura.obtener_estado_pago()}")
-    print("Método de Pago   : No registrado")
+    print(f"Método de Pago   : {factura.obtener_metodo_pago()}")
     print("\n============================================================")
     print("        Gracias por confiar en MEDIC-UTP")
     print("     Conserve este comprobante de atención")
@@ -947,8 +960,8 @@ def imprimir_boleta_ascii(factura):
 
 
 def generar_factura():
-    """Registra y genera una nueva boleta para una cita completada."""
-    print(subtitulo("GENERAR BOLETA"))
+    """Registra y genera una nueva boleta o factura para una cita completada."""
+    print(subtitulo("GENERAR COMPROBANTE"))
 
     if not citas:
         mensaje_error("No hay citas registradas en el sistema.")
@@ -975,14 +988,32 @@ def generar_factura():
         )
         return
 
-    # Validar que no exista factura previa para esa cita
+    # Validar que no exista factura/boleta previa para esa cita
     factura_previa = next((f for f in facturas if f.obtener_cita_id() == id_cita), None)
     if factura_previa:
         mensaje_error(
-            f"Conflicto: Ya existe una boleta (ID #{factura_previa.obtener_id()}) "
-            f"generada para la cita #{id_cita}."
+            f"Conflicto: Ya existe un comprobante (ID #{factura_previa.obtener_id()}) "
+            f"generado para la cita #{id_cita}."
         )
         return
+
+    # Elegir tipo de comprobante
+    tipo_comprobante = elegir_de_tupla("Tipo de comprobante:", ("Boleta", "Factura"))
+
+    ruc = ""
+    razon_social = ""
+
+    # Si es Factura, pedir RUC y Razón Social según la ley peruana
+    if tipo_comprobante == "Factura":
+        while True:
+            ruc = input("  Ingrese RUC (11 dígitos)    : ").strip()
+            if ruc.isdigit() and len(ruc) == 11 and ruc.startswith(("10", "20", "15", "17")):
+                break
+            mensaje_error("RUC inválido. Debe constar de 11 dígitos numéricos (ej. empieza con 10 o 20).")
+        razon_social = leer_cadena("Razón Social (Empresa)      : ")
+
+    # Elegir método de pago
+    metodo_pago = elegir_de_tupla("Método de pago:", ("Efectivo", "Yape"))
 
     # Autoincrementar ID
     max_id = max([f.obtener_id() for f in facturas], default=0)
@@ -991,61 +1022,67 @@ def generar_factura():
     # Fecha de emisión actual (formato: DD/MM/AAAA hh:mm AM/PM)
     fecha_emision = datetime.datetime.now().strftime("%d/%m/%Y %I:%M %p")
 
-    # Crear factura
-    nueva_factura = Factura(
+    # Crear comprobante
+    nuevo_comprobante = Factura(
         id=nuevo_id,
         cita=cita,
         fecha_emision=fecha_emision,
-        tipo_comprobante="Boleta"
+        tipo_comprobante=tipo_comprobante,
+        estado_pago="Completo",
+        ruc=ruc,
+        razon_social=razon_social,
+        metodo_pago=metodo_pago
     )
-    facturas.append(nueva_factura)
+    facturas.append(nuevo_comprobante)
 
     guardar_base_datos()
-    mensaje_ok(f"Boleta #{nuevo_id} generada con éxito para la Cita #{id_cita}.")
+    mensaje_ok(f"{tipo_comprobante} #{nuevo_id} generada con éxito para la Cita #{id_cita}.")
 
-    # Imprimir boleta en formato ASCII
-    imprimir_boleta_ascii(nueva_factura)
+    # Imprimir boleta/factura en formato ASCII
+    imprimir_boleta_ascii(nuevo_comprobante)
 
 
 def listar_facturas():
-    """Muestra todas las facturas en una tabla formateada."""
-    print(titulo("LISTADO DE FACTURAS"))
+    """Muestra todas las facturas/boletas en una tabla formateada."""
+    print(titulo("LISTADO DE COMPROBANTES"))
 
     if not facturas:
-        mensaje_info("No hay facturas registradas.")
+        mensaje_info("No hay comprobantes registrados.")
         return
 
-    anchos = [4, 8, 22, 10, 10]
-    encabezado_tabla(["ID", "Cita ID", "Paciente", "Total", "Estado"], anchos)
+    anchos = [4, 8, 8, 22, 10, 10]
+    encabezado_tabla(["ID", "Cita ID", "Tipo", "Paciente/Cliente", "Total", "Estado"], anchos)
     for f in facturas:
+        cliente = f.obtener_razon_social() if f.obtener_tipo_comprobante() == "Factura" else f.obtener_cita().obtener_paciente().obtener_nombre()
         print(fila_tabla(
             f"#{f.obtener_id()}",
             f"#{f.obtener_cita_id()}",
-            f.obtener_cita().obtener_paciente().obtener_nombre(),
+            f.obtener_tipo_comprobante(),
+            cliente,
             f"S/. {f.obtener_total():.2f}",
             f.obtener_estado_pago(),
             anchos=anchos
         ))
-    print(f"\n  Total: {len(facturas)} factura(s).")
+    print(f"\n  Total: {len(facturas)} comprobante(s).")
 
 
 def buscar_factura_por_id():
-    """Busca una factura por ID y muestra su resumen usando polimorfismo."""
-    print(subtitulo("BUSCAR FACTURA POR ID"))
+    """Busca una factura/boleta por ID y muestra su resumen usando polimorfismo."""
+    print(subtitulo("BUSCAR COMPROBANTE POR ID"))
 
     if not facturas:
-        mensaje_info("No hay facturas registradas.")
+        mensaje_info("No hay comprobantes registrados.")
         return
 
     try:
-        id_buscado = int(input("  Ingrese ID de la Factura    : "))
+        id_buscado = int(input("  Ingrese ID del Comprobante  : "))
     except ValueError:
         mensaje_error("El ID debe ser un número entero.")
         return
 
     factura = next((f for f in facturas if f.obtener_id() == id_buscado), None)
     if not factura:
-        mensaje_error(f"No existe la factura con ID #{id_buscado}.")
+        mensaje_error(f"No existe el comprobante con ID #{id_buscado}.")
         return
 
     print("\n  Resumen obtenido mediante polimorfismo:")
@@ -1053,22 +1090,22 @@ def buscar_factura_por_id():
 
 
 def mostrar_detalle_factura():
-    """Muestra todos los detalles de cobro de una boleta específica en formato ASCII."""
-    print(subtitulo("DETALLE DE BOLETA"))
+    """Muestra todos los detalles de cobro de un comprobante específico en formato ASCII."""
+    print(subtitulo("DETALLE DE COMPROBANTE"))
 
     if not facturas:
-        mensaje_info("No hay boletas registradas.")
+        mensaje_info("No hay comprobantes registrados.")
         return
 
     try:
-        id_buscado = int(input("  Ingrese ID de la Boleta     : "))
+        id_buscado = int(input("  Ingrese ID del Comprobante  : "))
     except ValueError:
         mensaje_error("El ID debe ser un número entero.")
         return
 
     factura = next((f for f in facturas if f.obtener_id() == id_buscado), None)
     if not factura:
-        mensaje_error(f"No existe la boleta con ID #{id_buscado}.")
+        mensaje_error(f"No existe el comprobante con ID #{id_buscado}.")
         return
 
     imprimir_boleta_ascii(factura)
