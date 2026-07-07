@@ -1003,13 +1003,22 @@ def generar_factura():
     ruc = ""
     razon_social = ""
 
-    # Si es Factura, pedir RUC y Razón Social según la ley peruana
+    # Si es Factura, generar RUC 10 automáticamente usando el DNI del paciente (Leyes SUNAT para personas naturales con negocio)
     if tipo_comprobante == "Factura":
-        while True:
-            ruc = input("  Ingrese RUC (11 dígitos)    : ").strip()
-            if ruc.isdigit() and len(ruc) == 11 and ruc.startswith(("10", "20", "15", "17")):
-                break
-            mensaje_error("RUC inválido. Debe constar de 11 dígitos numéricos (ej. empieza con 10 o 20).")
+        dni_paciente = cita.obtener_paciente().obtener_dni()
+        ruc_base = "10" + dni_paciente
+        # Algoritmo oficial SUNAT para módulo 11
+        multiplicadores = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+        suma = sum(int(ruc_base[i]) * multiplicadores[i] for i in range(10))
+        resto = suma % 11
+        verificador = 11 - resto
+        if verificador == 11:
+            verificador = 0
+        elif verificador == 10:
+            verificador = 1
+        ruc = ruc_base + str(verificador)
+        
+        print(f"  [i] RUC 10 Generado automáticamente: {ruc}")
         razon_social = leer_cadena("Razón Social (Empresa)      : ")
 
     # Elegir método de pago
