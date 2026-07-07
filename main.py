@@ -106,6 +106,7 @@ from clases.contacto import InformacionContacto # Herencia múltiple
 from clases.paciente import Paciente             # Hereda de Persona e InformacionContacto
 from clases.medico import Medico                 # Hereda de Persona (Herencia Simple)
 from clases.cita import Cita                     # Composición de clases
+from clases.factura import Factura               # Nueva clase de Facturación
 
 # Importación de conceptos de Polimorfismo
 from polimorfismo.sobreescritura import imprimir_resumen_entidad
@@ -130,7 +131,7 @@ indice_especialidad = {}                                   # Dict {especialidad:
 # 2B. CONFIGURACIONES DE AGENDAMIENTO
 # =====================================================================
 
-ESTADOS_CITA   = ("Pendiente", "Atendida", "Cancelada")   # [TUPLAS] estados posibles de una cita
+ESTADOS_CITA   = ("Pendiente", "Completada", "Cancelada")   # [TUPLAS] estados posibles de una cita
 HORAS_ATENCION = (                                         # [TUPLAS] franjas horarias disponibles
     "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
     "11:00", "11:30", "12:00", "14:00", "14:30", "15:00",
@@ -139,6 +140,7 @@ HORAS_ATENCION = (                                         # [TUPLAS] franjas ho
 
 citas = []             # [LISTAS] arreglo principal de objetos Cita
 slots_ocupados = set() # [COLECCIONES] set de tuplas (dni_medico, fecha, hora) — evita doble reserva
+facturas = []          # [LISTAS] arreglo principal de objetos Factura
 
 
 
@@ -219,7 +221,7 @@ def buscar_medico(dni):
 DB_PATH = "db.json"
 
 def guardar_base_datos():
-    """Guarda pacientes, médicos y citas en db.json."""
+    """Guarda pacientes, médicos, citas y facturas en db.json."""
     datos = {
         "pacientes": [p.a_dict() for p in pacientes],
         "medicos": [m.a_dict() for m in medicos],
@@ -233,7 +235,8 @@ def guardar_base_datos():
                 "motivo": c.obtener_motivo(),
                 "estado": c.obtener_estado()
             } for c in citas
-        ]
+        ],
+        "facturas": [f.a_dict() for f in facturas]
     }
     try:
         with open(DB_PATH, "w", encoding="utf-8") as f:
@@ -242,7 +245,7 @@ def guardar_base_datos():
         print(f"\n  [!] Error al guardar la base de datos: {e}")
 
 def cargar_base_datos():
-    """Carga pacientes, médicos y citas desde db.json si existe."""
+    """Carga pacientes, médicos, citas y facturas desde db.json si existe."""
     if not os.path.exists(DB_PATH):
         return
     try:
@@ -267,7 +270,8 @@ def cargar_base_datos():
                 dni=m_dict["dni"],
                 nombre=m_dict["nombre"],
                 especialidad=m_dict["especialidad"],
-                consultorio=m_dict["consultorio"]
+                consultorio=m_dict["consultorio"],
+                precio_consulta=m_dict.get("precio_consulta", 0.0)
             )
             medicos.append(m)
             dni_medicos.add(m.obtener_dni())
@@ -288,12 +292,32 @@ def cargar_base_datos():
                     motivo=c_dict["motivo"]
                 )
                 c._id = c_dict["id"]
-                c.cambiar_estado(c_dict["estado"])
+                # Migración automática del estado "Atendida" a "Completada"
+                estado = c_dict["estado"]
+                if estado == "Atendida":
+                    estado = "Completada"
+                c.cambiar_estado(estado)
                 citas.append(c)
                 max_id = max(max_id, c._id)
                 slots_ocupados.add((m.obtener_dni(), c.obtener_fecha(), c.obtener_hora()))
         
         _contador_cita_global[0] = max_id
+
+        # Cargar Facturas
+        for f_dict in datos.get("facturas", []):
+            cita = next((c for c in citas if c.obtener_id() == f_dict["cita_id"]), None)
+            if cita:
+                f = Factura(
+                    id=f_dict["id"],
+                    cita=cita,
+                    fecha_emision=f_dict["fecha_emision"],
+                    tipo_comprobante=f_dict["tipo_comprobante"],
+                    estado_pago=f_dict["estado_pago"]
+                )
+                f._monto_consulta = f_dict["monto_consulta"]
+                f._descuento = f_dict["descuento"]
+                f._total = f_dict["total"]
+                facturas.append(f)
     except Exception as e:
         print(f"\n  [!] Error al cargar la base de datos: {e}")
 
@@ -395,8 +419,18 @@ def registrar_medico():
     nombre = leer_cadena("Nombre completo       : ")
     especialidad = elegir_de_tupla("Especialidad:", ESPECIALIDADES_VALIDAS)  # [NUEVO]
     consultorio = leer_entero("N° de consultorio     : ", minimo=1, maximo=99)  # [NUEVO]
+    
+    # Precios base sugeridos por especialidad para wow factor
+    precios_sugeridos = {
+        "Cardiología": 150, "Dermatología": 120, "Neurología": 180, "Pediatría": 90,
+        "Traumatología": 130, "Oftalmología": 110, "Ginecología": 140, "Oncología": 200,
+        "Psiquiatría": 160, "Medicina General": 70
+    }
+    precio_sug = precios_sugeridos.get(especialidad, 80)
+    print(f"  [i] Precio de consulta sugerido para {especialidad}: S/. {precio_sug}")
+    precio_consulta = leer_entero("Precio de consulta (mín. S/. 10): ", minimo=10)
 
-    nuevo = Medico(dni, nombre, especialidad, consultorio)
+    nuevo = Medico(dni, nombre, especialidad, consultorio, precio_consulta)
     medicos.append(nuevo)
     dni_medicos.add(dni)                                   # [NUEVO] actualizar conjunto
     indice_especialidad.setdefault(especialidad, []).append(nuevo)  # [NUEVO] actualizar dict
@@ -434,12 +468,13 @@ def mostrar_medicos():
         return
 
     # [NUEVO] tabla con anchos de columna fijos ---------------------------
-    anchos = [10, 24, 20, 6]
-    encabezado_tabla(["DNI", "Nombre", "Especialidad", "Cons."], anchos)
+    anchos = [10, 20, 16, 6, 8]
+    encabezado_tabla(["DNI", "Nombre", "Especialidad", "Cons.", "Precio"], anchos)
     for m in medicos:
         print(fila_tabla(
             m.obtener_dni(), m.obtener_nombre(),
             m.obtener_especialidad(), m.obtener_consultorio(),
+            f"S/. {m.obtener_precio_consulta():.0f}",
             anchos=anchos
         ))
     print(f"\n  Total: {len(medicos)} médico(s).")
@@ -866,6 +901,215 @@ def menu_agendamiento():
             pausa()                                        # [DISEÑO CONSOLA] pausa entre pantallas
 
 
+def imprimir_boleta_ascii(factura):
+    cita = factura.obtener_cita()
+    paciente = cita.obtener_paciente()
+    medico = cita.obtener_medico()
+    
+    parts = factura.obtener_fecha_emision().split()
+    fecha_em = parts[0] if len(parts) > 0 else factura.obtener_fecha_emision()
+    hora_em = " ".join(parts[1:]) if len(parts) > 1 else "10:00 AM"
+    
+    n_boleta = f"B001-{factura.obtener_id():06d}"
+    
+    print("\n============================================================")
+    print("                     MEDIC-UTP")
+    print("          SISTEMA DE CITAS MÉDICAS Y FACTURACIÓN")
+    print("============================================================")
+    print("\n                 BOLETA ELECTRÓNICA")
+    print("------------------------------------------------------------")
+    print(f"N° Boleta        : {n_boleta}")
+    print(f"Fecha Emisión    : {fecha_em}")
+    print(f"Hora Emisión     : {hora_em}")
+    print(f"\nPaciente         : {paciente.obtener_nombre()}")
+    print(f"DNI              : {paciente.obtener_dni()}")
+    print(f"Seguro           : {paciente.obtener_seguro()}")
+    print(f"\nMédico           : Dr(a). {medico.obtener_nombre()}")
+    print(f"Especialidad     : {medico.obtener_especialidad()}")
+    print(f"Consultorio      : {medico.obtener_consultorio():02d}")
+    print("\n------------------------------------------------------------")
+    print("DETALLE DE LA ATENCIÓN")
+    print("------------------------------------------------------------")
+    print(f"Fecha de la cita : {cita.obtener_fecha()}")
+    print(f"Hora de la cita  : {cita.obtener_hora()}")
+    print(f"Motivo           : {cita.obtener_motivo()}")
+    print(f"\nPrecio Consulta  : S/. {factura.obtener_monto_consulta():.2f}")
+    print(f"Descuento Seguro : S/. {factura.obtener_descuento():.2f}")
+    print("-----------------------------------------")
+    print(f"TOTAL A PAGAR    : S/. {factura.obtener_total():.2f}")
+    print("-----------------------------------------")
+    print(f"\nEstado de Pago   : {factura.obtener_estado_pago()}")
+    print("Método de Pago   : No registrado")
+    print("\n============================================================")
+    print("        Gracias por confiar en MEDIC-UTP")
+    print("     Conserve este comprobante de atención")
+    print("============================================================\n")
+
+
+def generar_factura():
+    """Registra y genera una nueva boleta para una cita completada."""
+    print(subtitulo("GENERAR BOLETA"))
+
+    if not citas:
+        mensaje_error("No hay citas registradas en el sistema.")
+        return
+
+    # Buscar la cita
+    try:
+        id_cita = int(input("  Ingrese el ID de la Cita    : "))
+    except ValueError:
+        mensaje_error("El ID de la cita debe ser un número entero.")
+        return
+
+    # Encontrar la cita
+    cita = next((c for c in citas if c.obtener_id() == id_cita), None)
+    if not cita:
+        mensaje_error(f"No se encontró la cita con ID #{id_cita}.")
+        return
+
+    # Validar estado de la cita: sólo "Completada"
+    if cita.obtener_estado() != "Completada":
+        mensaje_error(
+            f"No se puede facturar. La cita está '{cita.obtener_estado()}'.\n"
+            f"  Sólo se permiten facturas para citas con estado 'Completada'."
+        )
+        return
+
+    # Validar que no exista factura previa para esa cita
+    factura_previa = next((f for f in facturas if f.obtener_cita_id() == id_cita), None)
+    if factura_previa:
+        mensaje_error(
+            f"Conflicto: Ya existe una boleta (ID #{factura_previa.obtener_id()}) "
+            f"generada para la cita #{id_cita}."
+        )
+        return
+
+    # Autoincrementar ID
+    max_id = max([f.obtener_id() for f in facturas], default=0)
+    nuevo_id = max_id + 1
+
+    # Fecha de emisión actual (formato: DD/MM/AAAA hh:mm AM/PM)
+    fecha_emision = datetime.datetime.now().strftime("%d/%m/%Y %I:%M %p")
+
+    # Crear factura
+    nueva_factura = Factura(
+        id=nuevo_id,
+        cita=cita,
+        fecha_emision=fecha_emision,
+        tipo_comprobante="Boleta"
+    )
+    facturas.append(nueva_factura)
+
+    guardar_base_datos()
+    mensaje_ok(f"Boleta #{nuevo_id} generada con éxito para la Cita #{id_cita}.")
+
+    # Imprimir boleta en formato ASCII
+    imprimir_boleta_ascii(nueva_factura)
+
+
+def listar_facturas():
+    """Muestra todas las facturas en una tabla formateada."""
+    print(titulo("LISTADO DE FACTURAS"))
+
+    if not facturas:
+        mensaje_info("No hay facturas registradas.")
+        return
+
+    anchos = [4, 8, 22, 10, 10]
+    encabezado_tabla(["ID", "Cita ID", "Paciente", "Total", "Estado"], anchos)
+    for f in facturas:
+        print(fila_tabla(
+            f"#{f.obtener_id()}",
+            f"#{f.obtener_cita_id()}",
+            f.obtener_cita().obtener_paciente().obtener_nombre(),
+            f"S/. {f.obtener_total():.2f}",
+            f.obtener_estado_pago(),
+            anchos=anchos
+        ))
+    print(f"\n  Total: {len(facturas)} factura(s).")
+
+
+def buscar_factura_por_id():
+    """Busca una factura por ID y muestra su resumen usando polimorfismo."""
+    print(subtitulo("BUSCAR FACTURA POR ID"))
+
+    if not facturas:
+        mensaje_info("No hay facturas registradas.")
+        return
+
+    try:
+        id_buscado = int(input("  Ingrese ID de la Factura    : "))
+    except ValueError:
+        mensaje_error("El ID debe ser un número entero.")
+        return
+
+    factura = next((f for f in facturas if f.obtener_id() == id_buscado), None)
+    if not factura:
+        mensaje_error(f"No existe la factura con ID #{id_buscado}.")
+        return
+
+    print("\n  Resumen obtenido mediante polimorfismo:")
+    imprimir_resumen_entidad(factura)
+
+
+def mostrar_detalle_factura():
+    """Muestra todos los detalles de cobro de una boleta específica en formato ASCII."""
+    print(subtitulo("DETALLE DE BOLETA"))
+
+    if not facturas:
+        mensaje_info("No hay boletas registradas.")
+        return
+
+    try:
+        id_buscado = int(input("  Ingrese ID de la Boleta     : "))
+    except ValueError:
+        mensaje_error("El ID debe ser un número entero.")
+        return
+
+    factura = next((f for f in facturas if f.obtener_id() == id_buscado), None)
+    if not factura:
+        mensaje_error(f"No existe la boleta con ID #{id_buscado}.")
+        return
+
+    imprimir_boleta_ascii(factura)
+
+
+def menu_facturacion():
+    """PASO 3: FACTURACIÓN — submenú con opciones numeradas."""
+    while True:
+        print(titulo("[ PASO 3 ]  FACTURACIÓN"))
+
+        opciones_menu = [
+            "Generar Factura",
+            "Listar Facturas",
+            "Buscar Factura por ID",
+            "Mostrar Detalle de Factura",
+            "Volver al Menú Principal",
+        ]
+        for i, op in enumerate(opciones_menu, start=1):
+            num = "0" if op == "Volver al Menú Principal" else str(i)
+            print(f"  {num}. {op}")
+        print(linea("-"))
+
+        op = leer_entero(
+            f"Opción (0-{len(opciones_menu)-1}): ",
+            minimo=0, maximo=len(opciones_menu) - 1
+        )
+
+        acciones = {
+            1: generar_factura,
+            2: listar_facturas,
+            3: buscar_factura_por_id,
+            4: mostrar_detalle_factura,
+        }
+
+        if op == 0:
+            return
+        elif op in acciones:
+            acciones[op]()
+            pausa()
+
+
 # =====================================================================
 # 5. SUBMENÚS DEL FLUJO
 # =====================================================================
@@ -945,7 +1189,7 @@ def main():
         print(linea("-"))                                  # [NUEVO]
         print("  1. PASO 1 -> REGISTRO          (disponible)")
         print("  2. PASO 2 -> AGENDAMIENTO      (disponible)")   # [NUEVO]
-        print("  3. PASO 3 -> FACTURACIÓN       (próximamente)")
+        print("  3. PASO 3 -> FACTURACIÓN       (disponible)")
         print("  0. Salir del Sistema")
         print(linea())                                     # [NUEVO]
 
@@ -956,7 +1200,7 @@ def main():
         elif op == 2:
             menu_agendamiento()                                # [NUEVO] módulo ya funcional
         elif op == 3:
-            menu_en_construccion("FACTURACIÓN")
+            menu_facturacion()
         elif op == 0:
             # [NUEVO] pantalla de despedida --------------------------------
             print(titulo("¡HASTA PRONTO!"))

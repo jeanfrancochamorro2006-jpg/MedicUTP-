@@ -4,7 +4,7 @@ Clase Cita - Entidad del módulo de agendamiento.
 Asocia un Paciente y un Medico en una fecha y hora determinada.
 """
 
-ESTADOS_CITA_BASE = ("Pendiente", "Atendida", "Cancelada")
+ESTADOS_CITA_BASE = ("Pendiente", "Completada", "Cancelada")
 
 _contador_cita_global = [0]
 
