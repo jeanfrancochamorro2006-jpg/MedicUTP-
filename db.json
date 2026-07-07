@@ -1,0 +1,12 @@
+{
+  "pacientes": [],
+  "medicos": [
+    {
+      "dni": "72323223",
+      "nombre": "Isabel Lopez",
+      "especialidad": "Pediatría",
+      "consultorio": 10
+    }
+  ],
+  "citas": []
+}

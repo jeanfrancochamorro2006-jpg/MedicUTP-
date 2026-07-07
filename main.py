@@ -12,7 +12,10 @@ Flujo del sistema:
 """
 
 import sys
-import datetime                                            # [NUEVO] módulo estándar para fecha/hora
+import datetime
+import os
+import json
+
 
 
 # =====================================================================
@@ -94,106 +97,37 @@ def pausa():                                               # [NUEVO]
 
 
 # =====================================================================
-# 1. HERENCIA SIMPLE: Clase base Persona y subclases Paciente y Medico
+# 1. IMPORTACIÓN DE CLASES Y MÓDULOS DE POO (REORGANIZADO EN CARPETAS)
 # =====================================================================
-# Persona es la superclase. Paciente y Medico heredan de ella y
-# comparten los atributos comunes _dni y _nombre (reutilización).
+# Importamos las clases organizadas en carpetas profesionales en español.
 # =====================================================================
+from clases.persona import Persona
+from clases.contacto import InformacionContacto # Herencia múltiple
+from clases.paciente import Paciente             # Hereda de Persona e InformacionContacto
+from clases.medico import Medico                 # Hereda de Persona (Herencia Simple)
+from clases.cita import Cita                     # Composición de clases
 
-class Persona:
-    """Clase base con atributos comunes (encapsulamiento con guion bajo)."""
-    def __init__(self, dni, nombre):
-        self._dni = dni
-        self._nombre = nombre
-
-    def obtener_dni(self):
-        return self._dni
-
-    def obtener_nombre(self):
-        return self._nombre
-
-
-class Paciente(Persona):
-    """Paciente hereda de Persona (Herencia Simple)."""
-    def __init__(self, dni, nombre, edad, telefono,
-                 seguro="Particular"):                     # [NUEVO] parámetro seguro con valor por defecto
-        super().__init__(dni, nombre)
-        self._edad = edad
-        self._telefono = telefono
-        self._seguro = seguro                              # [NUEVO] atributo tipo de seguro
-
-    def obtener_edad(self):
-        return self._edad
-
-    def obtener_telefono(self):
-        return self._telefono
-
-    def obtener_seguro(self):                              # [NUEVO] getter del seguro
-        return self._seguro
-
-    # [NUEVO] -----------------------------------------------------------
-    def a_dict(self):
-        """Convierte el objeto Paciente a diccionario (útil para estadísticas)."""
-        return {
-            "dni":      self._dni,
-            "nombre":   self._nombre,
-            "edad":     self._edad,
-            "telefono": self._telefono,
-            "seguro":   self._seguro,
-        }
-    # -------------------------------------------------------------------
-
-
-class Medico(Persona):
-    """Medico hereda de Persona (Herencia Simple)."""
-    def __init__(self, dni, nombre, especialidad,
-                 consultorio):                             # [NUEVO] parámetro número de consultorio
-        super().__init__(dni, nombre)
-        self._especialidad = especialidad
-        self._consultorio = consultorio                    # [NUEVO] atributo consultorio
-
-    def obtener_especialidad(self):
-        return self._especialidad
-
-    def obtener_consultorio(self):                         # [NUEVO] getter del consultorio
-        return self._consultorio
-
-    # [NUEVO] -----------------------------------------------------------
-    def a_dict(self):
-        """Convierte el objeto Medico a diccionario (útil para estadísticas)."""
-        return {
-            "dni":          self._dni,
-            "nombre":       self._nombre,
-            "especialidad": self._especialidad,
-            "consultorio":  self._consultorio,
-        }
-    # -------------------------------------------------------------------
-
+# Importación de conceptos de Polimorfismo
+from polimorfismo.sobreescritura import imprimir_resumen_entidad
+from polimorfismo.sobrecarga import BuscadorClinico
 
 # =====================================================================
 # 2. ALMACENAMIENTO EN ARREGLOS (LISTAS EN MEMORIA)
 # =====================================================================
 
-pacientes = []   # arreglo de objetos Paciente
-medicos = []     # arreglo de objetos Medico
+pacientes = []   # Arreglo de objetos Paciente
+medicos = []     # Arreglo de objetos Medico
 
-# [NUEVO] ---------------------------------------------------------------
 # Conjuntos (set) para verificar DNIs duplicados en O(1).
-# Son más eficientes que recorrer toda la lista con buscar_paciente().
-dni_pacientes = set()                                      # [NUEVO] conjunto de DNIs de pacientes
-dni_medicos   = set()                                      # [NUEVO] conjunto de DNIs de médicos
+dni_pacientes = set()                                      # Conjunto de DNIs de pacientes
+dni_medicos   = set()                                      # Conjunto de DNIs de médicos
 
 # Diccionario índice inverso: especialidad → lista de médicos.
-# Permite buscar médicos por especialidad sin recorrer toda la lista.
-indice_especialidad = {}                                   # [NUEVO] dict {especialidad: [Medico, ...]}
-# -----------------------------------------------------------------------
+indice_especialidad = {}                                   # Dict {especialidad: [Medico, ...]}
 
 
 # =====================================================================
-# 2B. CLASE CITA — ENTIDAD DEL MÓDULO DE AGENDAMIENTO
-# =====================================================================
-# Cita asocia un Paciente con un Medico en una fecha y hora específica.
-# Estado de la cita se controla con la tupla ESTADOS_CITA.
+# 2B. CONFIGURACIONES DE AGENDAMIENTO
 # =====================================================================
 
 ESTADOS_CITA   = ("Pendiente", "Atendida", "Cancelada")   # [TUPLAS] estados posibles de una cita
@@ -203,53 +137,9 @@ HORAS_ATENCION = (                                         # [TUPLAS] franjas ho
     "15:30", "16:00", "16:30", "17:00",
 )
 
-_contador_cita = [0]                                       # [LISTAS] lista-contador para ID autoincremental
-
-
-class Cita:
-    """
-    Representa una cita médica entre un Paciente y un Médico.
-    Atributos encapsulados con guion bajo (convención POO).
-    """
-    def __init__(self, paciente, medico, fecha, hora, motivo):
-        _contador_cita[0] += 1
-        self._id       = _contador_cita[0]                 # ID autoincremental
-        self._paciente = paciente                          # objeto Paciente
-        self._medico   = medico                            # objeto Medico
-        self._fecha    = fecha                             # string "DD/MM/AAAA"
-        self._hora     = hora                              # string "HH:MM"
-        self._motivo   = motivo                            # texto libre
-        self._estado   = ESTADOS_CITA[0]                  # [TUPLAS] estado inicial: "Pendiente"
-
-    # ── Getters ──────────────────────────────────────────────────────
-    def obtener_id(self):       return self._id
-    def obtener_paciente(self): return self._paciente
-    def obtener_medico(self):   return self._medico
-    def obtener_fecha(self):    return self._fecha
-    def obtener_hora(self):     return self._hora
-    def obtener_motivo(self):   return self._motivo
-    def obtener_estado(self):   return self._estado
-
-    def cambiar_estado(self, nuevo_estado):
-        """Cambia el estado solo si pertenece a ESTADOS_CITA."""
-        if nuevo_estado in ESTADOS_CITA:                   # [TUPLAS] validación contra la tupla
-            self._estado = nuevo_estado
-
-    def a_dict(self):
-        """Convierte la cita a diccionario para filtros y reportes."""
-        return {                                            # [COLECCIONES] diccionario de la cita
-            "id":       self._id,
-            "paciente": self._paciente.obtener_nombre(),
-            "medico":   self._medico.obtener_nombre(),
-            "fecha":    self._fecha,
-            "hora":     self._hora,
-            "motivo":   self._motivo,
-            "estado":   self._estado,
-        }
-
-
 citas = []             # [LISTAS] arreglo principal de objetos Cita
 slots_ocupados = set() # [COLECCIONES] set de tuplas (dni_medico, fecha, hora) — evita doble reserva
+
 
 
 # =====================================================================
@@ -321,6 +211,91 @@ def buscar_medico(dni):
         if m.obtener_dni() == dni:
             return m
     return None
+
+
+# =====================================================================
+# PERSISTENCIA EN JSON (db.json)
+# =====================================================================
+DB_PATH = "db.json"
+
+def guardar_base_datos():
+    """Guarda pacientes, médicos y citas en db.json."""
+    datos = {
+        "pacientes": [p.a_dict() for p in pacientes],
+        "medicos": [m.a_dict() for m in medicos],
+        "citas": [
+            {
+                "id": c.obtener_id(),
+                "paciente_dni": c.obtener_paciente().obtener_dni(),
+                "medico_dni": c.obtener_medico().obtener_dni(),
+                "fecha": c.obtener_fecha(),
+                "hora": c.obtener_hora(),
+                "motivo": c.obtener_motivo(),
+                "estado": c.obtener_estado()
+            } for c in citas
+        ]
+    }
+    try:
+        with open(DB_PATH, "w", encoding="utf-8") as f:
+            json.dump(datos, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"\n  [!] Error al guardar la base de datos: {e}")
+
+def cargar_base_datos():
+    """Carga pacientes, médicos y citas desde db.json si existe."""
+    if not os.path.exists(DB_PATH):
+        return
+    try:
+        with open(DB_PATH, "r", encoding="utf-8") as f:
+            datos = json.load(f)
+        
+        # Cargar Pacientes
+        for p_dict in datos.get("pacientes", []):
+            p = Paciente(
+                dni=p_dict["dni"],
+                nombre=p_dict["nombre"],
+                edad=p_dict["edad"],
+                telefono=p_dict["telefono"],
+                seguro=p_dict["seguro"]
+            )
+            pacientes.append(p)
+            dni_pacientes.add(p.obtener_dni())
+            
+        # Cargar Médicos
+        for m_dict in datos.get("medicos", []):
+            m = Medico(
+                dni=m_dict["dni"],
+                nombre=m_dict["nombre"],
+                especialidad=m_dict["especialidad"],
+                consultorio=m_dict["consultorio"]
+            )
+            medicos.append(m)
+            dni_medicos.add(m.obtener_dni())
+            indice_especialidad.setdefault(m.obtener_especialidad(), []).append(m)
+            
+        # Cargar Citas
+        from clases.cita import _contador_cita_global
+        max_id = 0
+        for c_dict in datos.get("citas", []):
+            p = buscar_paciente(c_dict["paciente_dni"])
+            m = buscar_medico(c_dict["medico_dni"])
+            if p and m:
+                c = Cita(
+                    paciente=p,
+                    medico=m,
+                    fecha=c_dict["fecha"],
+                    hora=c_dict["hora"],
+                    motivo=c_dict["motivo"]
+                )
+                c._id = c_dict["id"]
+                c.cambiar_estado(c_dict["estado"])
+                citas.append(c)
+                max_id = max(max_id, c._id)
+                slots_ocupados.add((m.obtener_dni(), c.obtener_fecha(), c.obtener_hora()))
+        
+        _contador_cita_global[0] = max_id
+    except Exception as e:
+        print(f"\n  [!] Error al cargar la base de datos: {e}")
 
 
 # =====================================================================
@@ -406,6 +381,7 @@ def registrar_paciente():
     pacientes.append(nuevo)
     dni_pacientes.add(dni)                                 # [NUEVO] actualizar conjunto
 
+    guardar_base_datos()                                   # Persistencia JSON
     mensaje_ok(f"Paciente '{nombre}' registrado con éxito.")  # [NUEVO]
 
 
@@ -425,6 +401,7 @@ def registrar_medico():
     dni_medicos.add(dni)                                   # [NUEVO] actualizar conjunto
     indice_especialidad.setdefault(especialidad, []).append(nuevo)  # [NUEVO] actualizar dict
 
+    guardar_base_datos()                                   # Persistencia JSON
     mensaje_ok(f"Médico '{nombre}' ({especialidad}) registrado con éxito.")  # [NUEVO]
 
 
@@ -524,6 +501,53 @@ def buscar_medicos_por_especialidad():
     print(f"\n  Encontrado(s): {len(resultado)} médico(s).")
 
 
+def buscar_poo_sobrecarga():
+    """
+    [POO] Función interactiva para demostrar Polimorfismo.
+    Utiliza BuscadorClinico (Sobrecarga simulada) y llama a imprimir_resumen_entidad
+    (Polimorfismo por Sobreescritura) para cada resultado encontrado.
+    """
+    print(subtitulo("BÚSQUEDA POO (SOBRECARGA Y SOBREESCRITURA)"))
+    print("  1. Buscar en Colección de Pacientes")
+    print("  2. Buscar en Colección de Médicos")
+    op_tipo = leer_entero("Seleccione tipo de búsqueda (1-2): ", minimo=1, maximo=2)
+    coleccion = pacientes if op_tipo == 1 else medicos
+    
+    print("\n  Filtros disponibles (Sobrecarga de Métodos):")
+    print("    1. Buscar solo por DNI")
+    print("    2. Buscar solo por Nombre")
+    print("    3. Buscar por DNI y por Nombre simultáneamente")
+    print("    4. No aplicar filtros (Mostrar todo)")
+    op_filtro = leer_entero("Elija una opción (1-4): ", minimo=1, maximo=4)
+    
+    buscador = BuscadorClinico()
+    resultado = []
+    
+    # Dependiendo de la opción del usuario, se llama al mismo método buscar con diferentes firmas (Sobrecarga)
+    if op_filtro == 1:
+        dni = leer_dni("Ingrese DNI a buscar: ")
+        resultado = buscador.buscar(coleccion, dni=dni) # Firma 1: (coleccion, dni)
+    elif op_filtro == 2:
+        nombre = leer_cadena("Ingrese Nombre a buscar: ")
+        resultado = buscador.buscar(coleccion, nombre=nombre) # Firma 2: (coleccion, nombre)
+    elif op_filtro == 3:
+        dni = leer_dni("Ingrese DNI a buscar: ")
+        nombre = leer_cadena("Ingrese Nombre a buscar: ")
+        resultado = buscador.buscar(coleccion, dni=dni, nombre=nombre) # Firma 3: (coleccion, dni, nombre)
+    else:
+        resultado = buscador.buscar(coleccion) # Firma 4: (coleccion)
+        
+    if not resultado:
+        mensaje_info("No se encontraron registros con los criterios especificados.")
+        return
+        
+    print(titulo("RESULTADOS (POLIMORFISMO DE SOBREESCRITURA)"))
+    for elem in resultado:
+        # Llama a la función polimórfica que invoca el obtener_resumen() de cada clase
+        imprimir_resumen_entidad(elem)
+    print(linea("-"))
+
+
 def resumen_general():
     """
     Panel de resumen rápido mostrado al inicio del menú principal.
@@ -621,6 +645,7 @@ def agendar_cita():
     citas.append(nueva)                                    # [LISTAS] agregar objeto a la lista
     slots_ocupados.add(slot)                               # [COLECCIONES] registrar slot en set
 
+    guardar_base_datos()                                   # Persistencia JSON
     mensaje_ok(                                            # [DISEÑO CONSOLA] confirmación visual
         f"Cita #{nueva.obtener_id()} agendada: "
         f"{paciente.obtener_nombre()} con Dr. {medico.obtener_nombre()} "
@@ -688,6 +713,7 @@ def cambiar_estado_cita():
 
     nuevo_estado = elegir_de_tupla("Nuevo estado:", ESTADOS_CITA)  # [TUPLAS] opciones de la tupla
     cita.cambiar_estado(nuevo_estado)
+    guardar_base_datos()                                   # Persistencia JSON
     mensaje_ok(f"Cita #{id_buscado} actualizada a estado '{nuevo_estado}'.")  # [DISEÑO CONSOLA]
 
 
@@ -855,10 +881,11 @@ def menu_registro():
             "Registrar Médico",
             "Mostrar Pacientes",
             "Mostrar Médicos",
-            "Buscar Pacientes por Seguro",              # [NUEVO]
-            "Buscar Médicos por Especialidad",          # [NUEVO]
-            "Estadísticas de Pacientes",                # [NUEVO]
-            "Estadísticas de Médicos",                  # [NUEVO]
+            "Buscar Pacientes por Seguro",
+            "Buscar Médicos por Especialidad",
+            "Estadísticas de Pacientes",
+            "Estadísticas de Médicos",
+            "Búsqueda POO (Sobrecarga/Polimorfismo)",
             "Volver al Menú Principal",
         ]
         for i, op in enumerate(opciones_menu, start=1):
@@ -876,10 +903,11 @@ def menu_registro():
             2: registrar_medico,
             3: mostrar_pacientes,
             4: mostrar_medicos,
-            5: buscar_pacientes_por_seguro,             # [NUEVO]
-            6: buscar_medicos_por_especialidad,         # [NUEVO]
-            7: estadisticas_pacientes,                  # [NUEVO]
-            8: estadisticas_medicos,                    # [NUEVO]
+            5: buscar_pacientes_por_seguro,
+            6: buscar_medicos_por_especialidad,
+            7: estadisticas_pacientes,
+            8: estadisticas_medicos,
+            9: buscar_poo_sobrecarga,
         }
         # ---------------------------------------------------------------------
 
@@ -887,7 +915,7 @@ def menu_registro():
             return
         elif op in acciones:
             acciones[op]()
-            pausa()                                        # [NUEVO]
+            pausa()
 
 
 def menu_en_construccion(nombre):
@@ -901,6 +929,7 @@ def menu_en_construccion(nombre):
 # =====================================================================
 
 def main():
+    cargar_base_datos()                                    # Carga persistencia JSON
     # [NUEVO] pantalla de bienvenida con VERSION_SISTEMA (tupla) ----------
     print(titulo(f"  {VERSION_SISTEMA[0]}  v{VERSION_SISTEMA[1]}"))
     print(f"{'Sistema de Citas Medicas y Facturacion'.center(ANCHO_CONSOLA)}")
