@@ -15,3 +15,9 @@ env/
 
 # Datos locales
 db.json
+
+# Reportes generados (CSV, gráficos PNG, comprobantes PDF)
+reportes/
+
+# Archivos temporales de bloqueo de Word/Office
+~$*
