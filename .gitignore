@@ -12,3 +12,6 @@ env/
 .idea/
 .qodo/
 .claude-dev-helper/
+
+# Datos locales
+db.json
