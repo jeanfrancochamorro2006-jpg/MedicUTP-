@@ -74,13 +74,5 @@ python main.py
 python -m unittest discover -s tests -v
 ```
 
-## 📄 Generar el informe del proyecto (Word)
-
-```bash
-python generar_informe.py
-```
-
-Genera `Informe_MedicUTP.docx`, listo para editar en Microsoft Word.
-
 ---
 Desarrollado por el equipo MEDIC-UTP — Universidad Tecnológica del Perú (UTP).
